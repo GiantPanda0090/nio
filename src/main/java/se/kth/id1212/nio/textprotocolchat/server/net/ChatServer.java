@@ -38,17 +38,17 @@ import se.kth.id1212.nio.textprotocolchat.server.controller.Controller;
 
 /**
  * Receives chat messages and broadcasts them to all chat clients. All communication to/from any
- * chat node pass this server.
+ * chat node passes this server.
  */
 public class ChatServer {
     private static final int LINGER_TIME = 5000;
     private static final int TIMEOUT_HALF_HOUR = 1800000;
     private final Controller contr = new Controller();
+    private final Queue<String> messagesToSend = new ArrayDeque<>();
     private int portNo = 8080;
     private Selector selector;
     private ServerSocketChannel listeningSocketChannel;
     private volatile boolean timeToBroadcast = false;
-    private final Queue<String> messagesToSend = new ArrayDeque<>();
 
     /**
      * Sends the specified message to all connected clients
@@ -93,7 +93,6 @@ public class ChatServer {
             }
         } catch (Exception e) {
             System.err.println("Server failure.");
-            e.printStackTrace();
         }
     }
 
@@ -104,7 +103,8 @@ public class ChatServer {
         ClientHandler handler = new ClientHandler(this, clientChannel);
         clientChannel.register(selector, SelectionKey.OP_WRITE, new Client(handler, contr.
                                                                            getConversation()));
-        clientChannel.setOption(StandardSocketOptions.SO_LINGER, LINGER_TIME); //Close will probably block on some JVMs.
+        clientChannel.setOption(StandardSocketOptions.SO_LINGER, LINGER_TIME); //Close will probably
+        //block on some JVMs.
         // clientChannel.socket().setSoTimeout(TIMEOUT_HALF_HOUR); Timeout is not supported on 
         // socket channels. Could be implemented using a separate timer that is checked whenever the
         // select() method in the main loop returns.
@@ -124,7 +124,6 @@ public class ChatServer {
         try {
             client.sendAll();
             key.interestOps(SelectionKey.OP_READ);
-        } catch (MessageException couldNotSendAllMsgs) {
         } catch (IOException clientHasClosedConnection) {
             removeClient(key);
         }
@@ -134,16 +133,6 @@ public class ChatServer {
         Client client = (Client) clientKey.attachment();
         client.handler.disconnectClient();
         clientKey.cancel();
-    }
-
-    private void parseArguments(String[] arguments) {
-        if (arguments.length > 0) {
-            try {
-                portNo = Integer.parseInt(arguments[1]);
-            } catch (NumberFormatException e) {
-                System.err.println("Invalid port number, using default.");
-            }
-        }
     }
 
     private void initSelector() throws IOException {
@@ -202,9 +191,12 @@ public class ChatServer {
         private void sendAll() throws IOException {
             String msg = null;
             synchronized (messagesToSend) {
-                while ((msg = messagesToSend.peek()) != null) {
-                    handler.sendMsg(msg);
-                    messagesToSend.remove();
+                try {
+                    while ((msg = messagesToSend.peek()) != null) {
+                        handler.sendMsg(msg);
+                        messagesToSend.remove();
+                    }
+                } catch (MessageException couldNotSendAllMessages) {
                 }
             }
         }
@@ -218,5 +210,15 @@ public class ChatServer {
         ChatServer server = new ChatServer();
         server.parseArguments(args);
         server.serve();
+    }
+
+    private void parseArguments(String[] arguments) {
+        if (arguments.length > 0) {
+            try {
+                portNo = Integer.parseInt(arguments[1]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid port number, using default.");
+            }
+        }
     }
 }

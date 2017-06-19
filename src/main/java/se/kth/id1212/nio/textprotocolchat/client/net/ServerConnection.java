@@ -30,9 +30,11 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Queue;
 import java.util.StringJoiner;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
 import se.kth.id1212.nio.textprotocolchat.common.Constants;
 import se.kth.id1212.nio.textprotocolchat.common.MessageException;
 import se.kth.id1212.nio.textprotocolchat.common.MessageSplitter;
@@ -45,22 +47,20 @@ public class ServerConnection implements Runnable {
     private static final String FATAL_COMMUNICATION_MSG = "Lost connection.";
     private static final String FATAL_DISCONNECT_MSG = "Could not disconnect, will leave ungracefully.";
 
-    private final ByteBuffer msgFromServer = ByteBuffer.allocate(Constants.MAX_MSG_LENGTH);
-    private String serverHost;
-    private int serverPort;
-    private CommunicationListener outputHandler;
+    private final ByteBuffer msgFromServer = ByteBuffer.allocateDirect(Constants.MAX_MSG_LENGTH);
+    private final Queue<String> messagesToSend = new ArrayDeque<>();
+    private final MessageSplitter msgSplitter = new MessageSplitter();
+    private final List<CommunicationListener> listeners = new ArrayList<>();
+    private InetSocketAddress serverAddress;
     private SocketChannel socketChannel;
     private Selector selector;
     private boolean connected;
     private volatile boolean timeToSend = false;
-    private final Queue<String> messagesToSend = new ArrayDeque<>();
-    private final MessageSplitter msgSplitter = new MessageSplitter();
 
     /**
      * The communicating thread, all communication is non-blocking. First, server connection is
      * established. Then the thread sends messages submitted via one of the <code>send</code>
-     * methods in this class. It also receives messages from the server and hands them over to the
-     * registered <code>CommunicationListener</code>
+     * methods in this class and receives messages from the server.
      */
     @Override
     public void run() {
@@ -89,9 +89,8 @@ public class ServerConnection implements Runnable {
                     }
                 }
             }
-        } catch (IOException ioe) {
+        } catch (Exception e) {
             System.err.println(FATAL_COMMUNICATION_MSG);
-            ioe.printStackTrace();
         }
         try {
             doDisconnect();
@@ -101,17 +100,24 @@ public class ServerConnection implements Runnable {
     }
 
     /**
-     * Starts the communicating thread and connect to the server.
+     * The specified listener will be notified when connecting, disconnecting and receiving a
+     * message.
      *
-     * @param host          Host name or IP address of server.
-     * @param port          Server's port number.
-     * @param outputHandler Called whenever a broadcast is received from server.
+     * @param listener The listener to notify.
+     */
+    public void addCommunicationListener(CommunicationListener listener) {
+        listeners.add(listener);
+    }
+
+    /**
+     * Starts the communicating thread and connects to the server.
+     *
+     * @param host Host name or IP address of server.
+     * @param port Server's port number.
      * @throws IOException If failed to connect.
      */
-    public void connect(String host, int port, CommunicationListener outputHandler) {
-        this.serverHost = host;
-        this.serverPort = port;
-        this.outputHandler = outputHandler;
+    public void connect(String host, int port) {
+        serverAddress = new InetSocketAddress(host, port);
         new Thread(this).start();
     }
 
@@ -123,7 +129,7 @@ public class ServerConnection implements Runnable {
     private void initConnection() throws IOException {
         socketChannel = SocketChannel.open();
         socketChannel.configureBlocking(false);
-        socketChannel.connect(new InetSocketAddress(serverHost, serverPort));
+        socketChannel.connect(serverAddress);
         connected = true;
     }
 
@@ -132,12 +138,11 @@ public class ServerConnection implements Runnable {
         key.interestOps(SelectionKey.OP_READ);
         try {
             InetSocketAddress remoteAddress = (InetSocketAddress) socketChannel.getRemoteAddress();
-            CompletableFuture.runAsync(()
-                    -> outputHandler.connected(remoteAddress.getHostString(),
-                                               remoteAddress.getPort()));
+            listeners.forEach((listener)
+                    -> ForkJoinPool.commonPool().execute(() -> listener.connected(remoteAddress)));
         } catch (IOException couldNotGetRemAddrUsingDefaultInstead) {
-            CompletableFuture.runAsync(()
-                    -> outputHandler.connected(serverHost, serverPort));
+            listeners.forEach((listener)
+                    -> ForkJoinPool.commonPool().execute(() -> listener.connected(serverAddress)));
         }
     }
 
@@ -154,7 +159,8 @@ public class ServerConnection implements Runnable {
     private void doDisconnect() throws IOException {
         socketChannel.close();
         socketChannel.keyFor(selector).cancel();
-        CompletableFuture.runAsync(() -> outputHandler.disconnected());
+        listeners.forEach((listener)
+                -> ForkJoinPool.commonPool().execute(() -> listener.disconnected()));
     }
 
     /**
@@ -168,8 +174,8 @@ public class ServerConnection implements Runnable {
     }
 
     /**
-     * Sends a chat entry to the server, which will broadcast it to all clients, including the
-     * sending client.
+     * Sends a chat entry to the server, which will broadcast it to all clients including this,
+     * sending, client.
      *
      * @param msg The message to broadcast.
      */
@@ -218,7 +224,9 @@ public class ServerConnection implements Runnable {
             if (MessageSplitter.typeOf(msg) != MsgType.BROADCAST) {
                 throw new MessageException("Received corrupt message: " + msg);
             }
-            CompletableFuture.runAsync(() -> outputHandler.recvdMsg(MessageSplitter.bodyOf(msg)));
+            listeners.forEach((listener)
+                    -> ForkJoinPool.commonPool().execute(()
+                            -> listener.recvdMsg(MessageSplitter.bodyOf(msg))));
         }
     }
 

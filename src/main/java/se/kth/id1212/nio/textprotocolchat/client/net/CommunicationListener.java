@@ -23,8 +23,10 @@
  */
 package se.kth.id1212.nio.textprotocolchat.client.net;
 
+import java.net.InetSocketAddress;
+
 /**
- * Handles broadcast messages from server.
+ * Receives communication events.
  */
 public interface CommunicationListener {
     /**
@@ -38,13 +40,12 @@ public interface CommunicationListener {
     /**
      * Called when the local client is successfully connected to the server.
      *
-     * @param host The host name of the server to which connection is established.
-     * @param port The port number of the server port to which connection is established.
+     * @param serverAddress The address of the server to which connection is established.
      */
-    public void connected(String host, int port);
+    public void connected(InetSocketAddress serverAddress);
 
     /**
-     * Called when the local client has been disconnected from the server.
+     * Called when the local client is successfully disconnected from the server.
      */
     public void disconnected();
 }

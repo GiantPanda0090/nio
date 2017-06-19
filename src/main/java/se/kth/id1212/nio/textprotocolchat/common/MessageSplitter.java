@@ -28,7 +28,7 @@ import java.util.Queue;
 import java.util.StringJoiner;
 
 /**
- * Handles receiving partial or multiple messages. Received data are sent to this class, and
+ * Handles receiving partial or multiple messages. Received data is sent to this class, and
  * individual messages are extracted. All methods are thread safe.
  */
 public class MessageSplitter {

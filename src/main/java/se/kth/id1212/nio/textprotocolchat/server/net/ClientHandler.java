@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.StringJoiner;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 import se.kth.id1212.nio.textprotocolchat.common.Constants;
 import se.kth.id1212.nio.textprotocolchat.common.MessageException;
@@ -44,9 +43,9 @@ class ClientHandler implements Runnable {
 
     private final ChatServer server;
     private final SocketChannel clientChannel;
-    private String username = "anonymous";
-    private final ByteBuffer msgFromClient = ByteBuffer.allocate(Constants.MAX_MSG_LENGTH);
+    private final ByteBuffer msgFromClient = ByteBuffer.allocateDirect(Constants.MAX_MSG_LENGTH);
     private final MessageSplitter msgSplitter = new MessageSplitter();
+    private String username = "anonymous";
 
     /**
      * Creates a new instance, which will handle communication with one specific client connected to
@@ -87,7 +86,7 @@ class ClientHandler implements Runnable {
      * Sends the specified message to the connected client.
      *
      * @param msg The message to send.
-     * @throws IOException If fails to close send message.
+     * @throws IOException If failed to send message.
      */
     void sendMsg(String msg) throws IOException {
         StringJoiner joiner = new StringJoiner(Constants.MSG_TYPE_DELIMETER);
@@ -105,7 +104,7 @@ class ClientHandler implements Runnable {
      * Reads a message from the connected client, then submits a task to the default
      * <code>ForkJoinPool</code>. That task which will handle the received message.
      *
-     * @throws IOException If fails to close read message
+     * @throws IOException If failed to read message
      */
     void recvMsg() throws IOException {
         msgFromClient.clear();
@@ -129,7 +128,7 @@ class ClientHandler implements Runnable {
     /**
      * Closes this instance's client connection.
      *
-     * @throws IOException If fails to close connection.
+     * @throws IOException If failed to close connection.
      */
     void disconnectClient() throws IOException {
         clientChannel.close();

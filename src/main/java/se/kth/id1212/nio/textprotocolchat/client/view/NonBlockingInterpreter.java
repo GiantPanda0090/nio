@@ -23,22 +23,23 @@
  */
 package se.kth.id1212.nio.textprotocolchat.client.view;
 
+import java.net.InetSocketAddress;
 import java.util.Scanner;
 import se.kth.id1212.nio.textprotocolchat.client.net.CommunicationListener;
 import se.kth.id1212.nio.textprotocolchat.client.net.ServerConnection;
 
 /**
  * Reads and interprets user commands. The command interpreter will run in a separate thread, which
- * is started by calling the <code>start</code> method. Commands are executed in a thread pool, a
- * new prompt will be displayed as soon as a command is submitted to the pool, without waiting for
- * command execution to complete.
+ * is started by calling the <code>start</code> method. A command is executed in a separate thread,
+ * a new prompt will be displayed as soon as a command is submitted, without waiting for command
+ * execution to complete.
  */
 public class NonBlockingInterpreter implements Runnable {
     private static final String PROMPT = "> ";
     private final Scanner console = new Scanner(System.in);
+    private final ThreadSafeStdOut outMgr = new ThreadSafeStdOut();
     private boolean receivingCmds = false;
     private ServerConnection server;
-    private final ThreadSafeStdOut outMgr = new ThreadSafeStdOut();
 
     /**
      * Starts the interpreter. The interpreter will be waiting for user input when this method
@@ -67,9 +68,9 @@ public class NonBlockingInterpreter implements Runnable {
                         server.disconnect();
                         break;
                     case CONNECT:
+                        server.addCommunicationListener(new ConsoleOutput());
                         server.connect(cmdLine.getParameter(0),
-                                      Integer.parseInt(cmdLine.getParameter(1)),
-                                      new ConsoleOutput());
+                                       Integer.parseInt(cmdLine.getParameter(1)));
                         break;
                     case USER:
                         server.sendUsername(cmdLine.getParameter(0));
@@ -95,18 +96,19 @@ public class NonBlockingInterpreter implements Runnable {
         }
 
         @Override
-        public void connected(String host, int port) {
-            printToConsole("Connected to " + host + ":" + port);
-        }
-        
-        private void printToConsole(String output) {
-            outMgr.println(output);
-            outMgr.print(PROMPT);            
+        public void connected(InetSocketAddress serverAddress) {
+            printToConsole("Connected to " + serverAddress.getHostName() + ":"
+                           + serverAddress.getPort());
         }
 
         @Override
         public void disconnected() {
             printToConsole("Disconnected from server.");
+        }
+
+        private void printToConsole(String output) {
+            outMgr.println(output);
+            outMgr.print(PROMPT);
         }
     }
 }
