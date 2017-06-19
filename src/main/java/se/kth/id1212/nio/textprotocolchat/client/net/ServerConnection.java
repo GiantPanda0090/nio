@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.StringJoiner;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import se.kth.id1212.nio.textprotocolchat.common.Constants;
 import se.kth.id1212.nio.textprotocolchat.common.MessageException;
@@ -138,11 +139,9 @@ public class ServerConnection implements Runnable {
         key.interestOps(SelectionKey.OP_READ);
         try {
             InetSocketAddress remoteAddress = (InetSocketAddress) socketChannel.getRemoteAddress();
-            listeners.forEach((listener)
-                    -> ForkJoinPool.commonPool().execute(() -> listener.connected(remoteAddress)));
+                notifyConnectionDone(remoteAddress);
         } catch (IOException couldNotGetRemAddrUsingDefaultInstead) {
-            listeners.forEach((listener)
-                    -> ForkJoinPool.commonPool().execute(() -> listener.connected(serverAddress)));
+                notifyConnectionDone(serverAddress);
         }
     }
 
@@ -159,8 +158,7 @@ public class ServerConnection implements Runnable {
     private void doDisconnect() throws IOException {
         socketChannel.close();
         socketChannel.keyFor(selector).cancel();
-        listeners.forEach((listener)
-                -> ForkJoinPool.commonPool().execute(() -> listener.disconnected()));
+        notifyDisconnectionDone();
     }
 
     /**
@@ -224,9 +222,7 @@ public class ServerConnection implements Runnable {
             if (MessageSplitter.typeOf(msg) != MsgType.BROADCAST) {
                 throw new MessageException("Received corrupt message: " + msg);
             }
-            listeners.forEach((listener)
-                    -> ForkJoinPool.commonPool().execute(()
-                            -> listener.recvdMsg(MessageSplitter.bodyOf(msg))));
+            notifyMsgReceived(MessageSplitter.bodyOf(msg));
         }
     }
 
@@ -235,5 +231,41 @@ public class ServerConnection implements Runnable {
         byte[] bytes = new byte[msgFromServer.remaining()];
         msgFromServer.get(bytes);
         return new String(bytes);
+    }
+    
+    private void notifyConnectionDone(InetSocketAddress connectedAddress) {
+        Executor pool = ForkJoinPool.commonPool();
+        for (CommunicationListener listener : listeners) {
+            pool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    listener.connected(connectedAddress);
+                }
+            });
+        }
+    }
+    
+    private void notifyDisconnectionDone() {
+        Executor pool = ForkJoinPool.commonPool();
+        for (CommunicationListener listener : listeners) {
+            pool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    listener.disconnected();
+                }
+            });
+        }
+    }
+    
+    private void notifyMsgReceived(String msg) {
+        Executor pool = ForkJoinPool.commonPool();
+        for (CommunicationListener listener : listeners) {
+            pool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    listener.recvdMsg(msg);
+                }
+            });
+        }
     }
 }
