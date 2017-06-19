@@ -45,7 +45,7 @@ public class ServerConnection implements Runnable {
     private static final String FATAL_COMMUNICATION_MSG = "Lost connection.";
     private static final String FATAL_DISCONNECT_MSG = "Could not disconnect, will leave ungracefully.";
 
-    private final ByteBuffer msgFromClient = ByteBuffer.allocate(Constants.MAX_MSG_LENGTH);
+    private final ByteBuffer msgFromServer = ByteBuffer.allocate(Constants.MAX_MSG_LENGTH);
     private String serverHost;
     private int serverPort;
     private CommunicationListener outputHandler;
@@ -68,7 +68,7 @@ public class ServerConnection implements Runnable {
             initConnection();
             initSelector();
 
-            while (connected) {
+            while (connected || !messagesToSend.isEmpty()) {
                 if (timeToSend) {
                     socketChannel.keyFor(selector).interestOps(SelectionKey.OP_WRITE);
                     timeToSend = false;
@@ -91,6 +91,7 @@ public class ServerConnection implements Runnable {
             }
         } catch (IOException ioe) {
             System.err.println(FATAL_COMMUNICATION_MSG);
+            ioe.printStackTrace();
         }
         try {
             doDisconnect();
@@ -147,7 +148,7 @@ public class ServerConnection implements Runnable {
      */
     public void disconnect() throws IOException {
         connected = false;
-        selector.wakeup();
+        sendMsg(MsgType.DISCONNECT.toString(), null);
     }
 
     private void doDisconnect() throws IOException {
@@ -181,8 +182,9 @@ public class ServerConnection implements Runnable {
         for (String part : parts) {
             joiner.add(part);
         }
+        String messageWithLengthHeader = MessageSplitter.prependLengthHeader(joiner.toString());
         synchronized (messagesToSend) {
-            messagesToSend.add(joiner.toString());
+            messagesToSend.add(messageWithLengthHeader);
         }
         timeToSend = true;
         selector.wakeup();
@@ -192,9 +194,9 @@ public class ServerConnection implements Runnable {
         String msg;
         synchronized (messagesToSend) {
             while ((msg = messagesToSend.peek()) != null) {
-                ByteBuffer msgToClient = ByteBuffer.wrap(msg.getBytes());
-                socketChannel.write(msgToClient);
-                if (msgToClient.hasRemaining()) {
+                ByteBuffer msgToServer = ByteBuffer.wrap(msg.getBytes());
+                socketChannel.write(msgToServer);
+                if (msgToServer.hasRemaining()) {
                     return;
                 }
                 messagesToSend.remove();
@@ -204,12 +206,13 @@ public class ServerConnection implements Runnable {
     }
 
     private void recvFromServer(SelectionKey key) throws IOException {
-        msgFromClient.clear();
-        int numOfReadBytes = socketChannel.read(msgFromClient);
+        msgFromServer.clear();
+        int numOfReadBytes = socketChannel.read(msgFromServer);
         if (numOfReadBytes == -1) {
             throw new IOException(FATAL_COMMUNICATION_MSG);
         }
-        msgSplitter.appendRecvdString(new String(msgFromClient.array()).trim());
+        String recvdString = extractMessageFromBuffer();
+        msgSplitter.appendRecvdString(recvdString);
         while (msgSplitter.hasNext()) {
             String msg = msgSplitter.nextMsg();
             if (MessageSplitter.typeOf(msg) != MsgType.BROADCAST) {
@@ -217,5 +220,12 @@ public class ServerConnection implements Runnable {
             }
             CompletableFuture.runAsync(() -> outputHandler.recvdMsg(MessageSplitter.bodyOf(msg)));
         }
+    }
+
+    private String extractMessageFromBuffer() {
+        msgFromServer.flip();
+        byte[] bytes = new byte[msgFromServer.remaining()];
+        msgFromServer.get(bytes);
+        return new String(bytes);
     }
 }

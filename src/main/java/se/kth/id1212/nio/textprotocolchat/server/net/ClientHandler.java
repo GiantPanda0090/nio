@@ -24,10 +24,10 @@
 package se.kth.id1212.nio.textprotocolchat.server.net;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.StringJoiner;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 import se.kth.id1212.nio.textprotocolchat.common.Constants;
 import se.kth.id1212.nio.textprotocolchat.common.MessageException;
@@ -46,6 +46,7 @@ class ClientHandler implements Runnable {
     private final SocketChannel clientChannel;
     private String username = "anonymous";
     private final ByteBuffer msgFromClient = ByteBuffer.allocate(Constants.MAX_MSG_LENGTH);
+    private final MessageSplitter msgSplitter = new MessageSplitter();
 
     /**
      * Creates a new instance, which will handle communication with one specific client connected to
@@ -63,25 +64,22 @@ class ClientHandler implements Runnable {
      */
     @Override
     public void run() {
-        Message msg = new Message(new String(msgFromClient.array()));
-        switch (msg.msgType) {
-            case USER:
-                username = msg.msgBody;
-                server.broadcast(username + JOIN_MESSAGE);
-                break;
-            case ENTRY:
-                server.broadcast(username + USERNAME_DELIMETER + msg.msgBody);
-                break;
-            case DISCONNECT:
-                try {
-                    disconnectClient();
-                } catch (IOException ioe) {
-                    throw new MessageException("Failed to disconnect.", ioe);
-                }
-                server.broadcast(username + LEAVE_MESSAGE);
-                break;
-            default:
-                throw new MessageException("Received corrupt message: " + msg.receivedString);
+        while (msgSplitter.hasNext()) {
+            Message msg = new Message(msgSplitter.nextMsg());
+            switch (msg.msgType) {
+                case USER:
+                    username = msg.msgBody;
+                    server.broadcast(username + JOIN_MESSAGE);
+                    break;
+                case ENTRY:
+                    server.broadcast(username + USERNAME_DELIMETER + msg.msgBody);
+                    break;
+                case DISCONNECT:
+                    server.broadcast(username + LEAVE_MESSAGE);
+                    break;
+                default:
+                    throw new MessageException("Received corrupt message: " + msg.receivedString);
+            }
         }
     }
 
@@ -89,6 +87,7 @@ class ClientHandler implements Runnable {
      * Sends the specified message to the connected client.
      *
      * @param msg The message to send.
+     * @throws IOException If fails to close send message.
      */
     void sendMsg(String msg) throws IOException {
         StringJoiner joiner = new StringJoiner(Constants.MSG_TYPE_DELIMETER);
@@ -104,7 +103,9 @@ class ClientHandler implements Runnable {
 
     /**
      * Reads a message from the connected client, then submits a task to the default
-     * <code>ForkJoinPool</code>. This task which will handle the received message.
+     * <code>ForkJoinPool</code>. That task which will handle the received message.
+     *
+     * @throws IOException If fails to close read message
      */
     void recvMsg() throws IOException {
         msgFromClient.clear();
@@ -113,9 +114,23 @@ class ClientHandler implements Runnable {
         if (numOfReadBytes == -1) {
             throw new IOException("Client has closed connection.");
         }
+        String recvdString = extractMessageFromBuffer();
+        msgSplitter.appendRecvdString(recvdString);
         ForkJoinPool.commonPool().execute(this);
     }
 
+    private String extractMessageFromBuffer() {
+        msgFromClient.flip();
+        byte[] bytes = new byte[msgFromClient.remaining()];
+        msgFromClient.get(bytes);
+        return new String(bytes);
+    }
+
+    /**
+     * Closes this instance's client connection.
+     *
+     * @throws IOException If fails to close connection.
+     */
     void disconnectClient() throws IOException {
         clientChannel.close();
     }

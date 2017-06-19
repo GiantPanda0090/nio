@@ -31,6 +31,7 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayDeque;
+import java.util.Iterator;
 import java.util.Queue;
 import se.kth.id1212.nio.textprotocolchat.common.MessageException;
 import se.kth.id1212.nio.textprotocolchat.server.controller.Controller;
@@ -69,13 +70,15 @@ public class ChatServer {
             initListeningSocketChannel();
             while (true) {
                 if (timeToBroadcast) {
-                    writeOperationForAllKeys();
+                    writeOperationForAllActiveClients();
                     appendMsgToAllClientQueues();
                     timeToBroadcast = false;
                 }
                 selector.select();
-                for (SelectionKey key : selector.selectedKeys()) {
-                    selector.selectedKeys().remove(key);
+                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                while (iterator.hasNext()) {
+                    SelectionKey key = iterator.next();
+                    iterator.remove();
                     if (!key.isValid()) {
                         continue;
                     }
@@ -154,9 +157,9 @@ public class ChatServer {
         listeningSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
     }
 
-    private void writeOperationForAllKeys() {
+    private void writeOperationForAllActiveClients() {
         for (SelectionKey key : selector.keys()) {
-            if (key.channel() instanceof SocketChannel) {
+            if (key.channel() instanceof SocketChannel && key.isValid()) {
                 key.interestOps(SelectionKey.OP_WRITE);
             }
         }
