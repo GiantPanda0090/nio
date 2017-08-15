@@ -40,7 +40,9 @@ public class FileChannelTest {
                         = channel.map(FileChannel.MapMode.READ_ONLY,
                                       0, channel.size());
                 WritableByteChannel out = Channels.newChannel(System.out);
-                while (buffer.hasRemaining() && out.write(buffer) != -1);
+                while (buffer.hasRemaining()) {
+                    out.write(buffer);
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
