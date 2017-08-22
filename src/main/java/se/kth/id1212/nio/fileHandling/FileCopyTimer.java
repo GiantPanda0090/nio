@@ -42,8 +42,8 @@ import java.nio.channels.FileChannel;
  * Compares performance of different IO APIs by copying the content of a file.
  */
 public class FileCopyTimer {
-    private File inFile;
-    private File outFile;
+    private final File inFile;
+    private final File outFile;
 
     private long startTime;
 
@@ -62,16 +62,13 @@ public class FileCopyTimer {
         startTimer();
 
         try {
-            BufferedInputStream bis = new BufferedInputStream(
-                    new FileInputStream(inFile));
-            BufferedOutputStream bos = new BufferedOutputStream(
-                    new FileOutputStream(outFile));
-            int c = 0;
-            while ((c = bis.read()) != -1) {
-                bos.write(c);
+            try (FileInputStream bis = new FileInputStream(inFile);
+                 FileOutputStream bos = new FileOutputStream(outFile)) {
+                int c;
+                while ((c = bis.read()) != -1) {
+                    bos.write(c);
+                }
             }
-            bis.close();
-            bos.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -86,14 +83,13 @@ public class FileCopyTimer {
         startTimer();
 
         try {
-            BufferedReader br = new BufferedReader(new FileReader(inFile));
-            BufferedWriter bw = new BufferedWriter(new FileWriter(outFile));
-            int c = 0;
-            while ((c = br.read()) != -1) {
-                bw.write(c);
+            try (FileReader br = new FileReader(inFile);
+                 FileWriter bw = new FileWriter(outFile)) {
+                int c;
+                while ((c = br.read()) != -1) {
+                    bw.write(c);
+                }
             }
-            br.close();
-            bw.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -108,15 +104,14 @@ public class FileCopyTimer {
         startTimer();
 
         try {
-            BufferedReader br = new BufferedReader(new FileReader(inFile));
-            PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(
-                    outFile)));
-            String s;
-            while ((s = br.readLine()) != null) {
-                pw.println(s);
+            try (BufferedReader br = new BufferedReader(new FileReader(inFile));
+                 PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(
+                         outFile)))) {
+                String s;
+                while ((s = br.readLine()) != null) {
+                    pw.println(s);
+                }
             }
-            br.close();
-            pw.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -125,22 +120,43 @@ public class FileCopyTimer {
     }
 
     /**
-     * Uses the InputStream/OutputStream API in java.io, reads lines instead of bytes.
+     * Uses the Reader/Writer API in java.io, reads buffers instead of bytes.
      */
-    public long testLineStreamAPI() {
+    public long testBufferedReaderWriterAPI() {
         startTimer();
 
         try {
-            BufferedInputStream bis = new BufferedInputStream(
-                    new FileInputStream(inFile));
-            PrintStream ps = new PrintStream(new BufferedOutputStream(
-                    new FileOutputStream(outFile)));
-            byte[] buf = new byte[10];
-            while (bis.read(buf, 0, buf.length) != -1) {
-                ps.write(buf, 0, buf.length);
+            try (BufferedReader br = new BufferedReader(new FileReader(inFile));
+                 PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(
+                         outFile)))) {
+                char[] buf = new char[4096];
+                while (br.read(buf, 0, buf.length) != -1) {
+                    pw.write(buf, 0, buf.length);
+                }
             }
-            bis.close();
-            ps.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return stopTimer();
+    }
+
+    /**
+     * Uses the InputStream/OutputStream API in java.io, reads buffers instead of bytes.
+     */
+    public long testBufferedStreamAPI() {
+        startTimer();
+
+        try {
+            try (BufferedInputStream bis = new BufferedInputStream(
+                    new FileInputStream(inFile));
+                 PrintStream ps = new PrintStream(new BufferedOutputStream(
+                         new FileOutputStream(outFile)))) {
+                byte[] buf = new byte[8192];
+                while (bis.read(buf, 0, buf.length) != -1) {
+                    ps.write(buf, 0, buf.length);
+                }
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -155,19 +171,18 @@ public class FileCopyTimer {
         startTimer();
 
         try {
-            FileInputStream fis = new FileInputStream(inFile);
-            FileOutputStream fos = new FileOutputStream(outFile);
-            FileChannel inChannel = fis.getChannel();
-            FileChannel outChannel = fos.getChannel();
-            ByteBuffer buffer = ByteBuffer.allocate(1024);
-            int c = 0;
-            while ((c = inChannel.read(buffer)) != -1) {
-                buffer.flip();
-                outChannel.write(buffer);
-                buffer.clear();
+            try (FileInputStream fis = new FileInputStream(inFile);
+                 FileOutputStream fos = new FileOutputStream(outFile)) {
+                FileChannel inChannel = fis.getChannel();
+                FileChannel outChannel = fos.getChannel();
+                ByteBuffer buffer = ByteBuffer.allocate(8192);
+                int c = 0;
+                while ((c = inChannel.read(buffer)) != -1) {
+                    buffer.flip();
+                    outChannel.write(buffer);
+                    buffer.clear();
+                }
             }
-            fis.close();
-            fos.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -183,19 +198,18 @@ public class FileCopyTimer {
         startTimer();
 
         try {
-            FileInputStream fis = new FileInputStream(inFile);
-            FileOutputStream fos = new FileOutputStream(outFile);
-            FileChannel inChannel = fis.getChannel();
-            FileChannel outChannel = fos.getChannel();
-            ByteBuffer buffer = ByteBuffer.allocateDirect(1024);
-            int c = 0;
-            while ((c = inChannel.read(buffer)) != -1) {
-                buffer.flip();
-                outChannel.write(buffer);
-                buffer.clear();
+            try (FileInputStream fis = new FileInputStream(inFile);
+                 FileOutputStream fos = new FileOutputStream(outFile)) {
+                FileChannel inChannel = fis.getChannel();
+                FileChannel outChannel = fos.getChannel();
+                ByteBuffer buffer = ByteBuffer.allocateDirect(8192);
+                int c = 0;
+                while ((c = inChannel.read(buffer)) != -1) {
+                    buffer.flip();
+                    outChannel.write(buffer);
+                    buffer.clear();
+                }
             }
-            fis.close();
-            fos.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -211,13 +225,12 @@ public class FileCopyTimer {
         startTimer();
 
         try {
-            FileInputStream fis = new FileInputStream(inFile);
-            FileOutputStream fos = new FileOutputStream(outFile);
-            FileChannel inChannel = fis.getChannel();
-            FileChannel outChannel = fos.getChannel();
-            inChannel.transferTo(0, inChannel.size(), outChannel);
-            fis.close();
-            fos.close();
+            try (FileInputStream fis = new FileInputStream(inFile);
+                 FileOutputStream fos = new FileOutputStream(outFile)) {
+                FileChannel inChannel = fis.getChannel();
+                FileChannel outChannel = fos.getChannel();
+                inChannel.transferTo(0, inChannel.size(), outChannel);
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -240,16 +253,16 @@ public class FileCopyTimer {
         FileCopyTimer fct = new FileCopyTimer(new File(args[0]), new File(
                                               args[1]));
 
-        fct.testReaderWriterAPI(); // warmup.
-
         System.out.println("Using the ReaderWriter API, copying bytes:"
                            + fct.testReaderWriterAPI() + " ms");
         System.out.println("Using the ReaderWriter API, copying lines:"
                            + fct.testLineReaderWriterAPI() + " ms");
+        System.out.println("Using the ReaderWriter API, copying buffers:"
+                           + fct.testBufferedReaderWriterAPI() + " ms");
         System.out.println("Using the Stream API, copying bytes:"
                            + fct.testStreamAPI() + " ms");
-        System.out.println("Using the Stream API, copying lines:"
-                           + fct.testLineStreamAPI() + " ms");
+        System.out.println("Using the Stream API, copying buffers:"
+                           + fct.testBufferedStreamAPI() + " ms");
         System.out.println("Using the indirect nio API:"
                            + fct.testIndirectNio() + " ms");
         System.out.println("Using the direct nio API:" + fct.testDirectNio()
