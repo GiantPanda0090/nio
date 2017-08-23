@@ -49,7 +49,7 @@ public class ServerConnection implements Runnable {
     private static final String FATAL_DISCONNECT_MSG = "Could not disconnect, will leave ungracefully.";
 
     private final ByteBuffer msgFromServer = ByteBuffer.allocateDirect(Constants.MAX_MSG_LENGTH);
-    private final Queue<String> messagesToSend = new ArrayDeque<>();
+    private final Queue<ByteBuffer> messagesToSend = new ArrayDeque<>();
     private final MessageSplitter msgSplitter = new MessageSplitter();
     private final List<CommunicationListener> listeners = new ArrayList<>();
     private InetSocketAddress serverAddress;
@@ -188,19 +188,18 @@ public class ServerConnection implements Runnable {
         }
         String messageWithLengthHeader = MessageSplitter.prependLengthHeader(joiner.toString());
         synchronized (messagesToSend) {
-            messagesToSend.add(messageWithLengthHeader);
+            messagesToSend.add(ByteBuffer.wrap(messageWithLengthHeader.getBytes()));
         }
         timeToSend = true;
         selector.wakeup();
     }
 
     private void sendToServer(SelectionKey key) throws IOException {
-        String msg;
+        ByteBuffer msg;
         synchronized (messagesToSend) {
             while ((msg = messagesToSend.peek()) != null) {
-                ByteBuffer msgToServer = ByteBuffer.wrap(msg.getBytes());
-                socketChannel.write(msgToServer);
-                if (msgToServer.hasRemaining()) {
+                socketChannel.write(msg);
+                if (msg.hasRemaining()) {
                     return;
                 }
                 messagesToSend.remove();

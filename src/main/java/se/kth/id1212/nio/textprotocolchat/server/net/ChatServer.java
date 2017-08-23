@@ -26,6 +26,7 @@ package se.kth.id1212.nio.textprotocolchat.server.net;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
@@ -33,7 +34,11 @@ import java.nio.channels.SocketChannel;
 import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.Queue;
+import java.util.StringJoiner;
+import se.kth.id1212.nio.textprotocolchat.common.Constants;
 import se.kth.id1212.nio.textprotocolchat.common.MessageException;
+import se.kth.id1212.nio.textprotocolchat.common.MessageSplitter;
+import se.kth.id1212.nio.textprotocolchat.common.MsgType;
 import se.kth.id1212.nio.textprotocolchat.server.controller.Controller;
 
 /**
@@ -44,7 +49,7 @@ public class ChatServer {
     private static final int LINGER_TIME = 5000;
     private static final int TIMEOUT_HALF_HOUR = 1800000;
     private final Controller contr = new Controller();
-    private final Queue<String> messagesToSend = new ArrayDeque<>();
+    private final Queue<ByteBuffer> messagesToSend = new ArrayDeque<>();
     private int portNo = 8080;
     private Selector selector;
     private ServerSocketChannel listeningSocketChannel;
@@ -58,10 +63,19 @@ public class ChatServer {
     void broadcast(String msg) {
         contr.appendEntry(msg);
         timeToBroadcast = true;
+        ByteBuffer completeMsg = createBroadcastMessage(msg);
         synchronized (messagesToSend) {
-            messagesToSend.add(msg);
+            messagesToSend.add(completeMsg);
         }
         selector.wakeup();
+    }
+
+    private ByteBuffer createBroadcastMessage(String msg) {
+        StringJoiner joiner = new StringJoiner(Constants.MSG_TYPE_DELIMETER);
+        joiner.add(MsgType.BROADCAST.toString());
+        joiner.add(msg);
+        String messageWithLengthHeader = MessageSplitter.prependLengthHeader(joiner.toString());
+        return ByteBuffer.wrap(messageWithLengthHeader.getBytes());
     }
 
     private void serve() {
@@ -156,7 +170,7 @@ public class ChatServer {
 
     private void appendMsgToAllClientQueues() {
         synchronized (messagesToSend) {
-            String msgToSend;
+            ByteBuffer msgToSend;
             while ((msgToSend = messagesToSend.poll()) != null) {
                 for (SelectionKey key : selector.keys()) {
                     Client client = (Client) key.attachment();
@@ -171,25 +185,25 @@ public class ChatServer {
         }
     }
 
-    private static class Client {
+    private class Client {
         private final ClientHandler handler;
-        private final Queue<String> messagesToSend = new ArrayDeque<>();
+        private final Queue<ByteBuffer> messagesToSend = new ArrayDeque<>();
 
         private Client(ClientHandler handler, String[] conversation) {
             this.handler = handler;
             for (String entry : conversation) {
-                messagesToSend.add(entry);
+                messagesToSend.add(createBroadcastMessage(entry));
             }
         }
 
-        private void queueMsgToSend(String msg) {
+        private void queueMsgToSend(ByteBuffer msg) {
             synchronized (messagesToSend) {
-                messagesToSend.add(msg);
+                messagesToSend.add(msg.duplicate());
             }
         }
 
         private void sendAll() throws IOException {
-            String msg = null;
+            ByteBuffer msg = null;
             synchronized (messagesToSend) {
                 try {
                     while ((msg = messagesToSend.peek()) != null) {

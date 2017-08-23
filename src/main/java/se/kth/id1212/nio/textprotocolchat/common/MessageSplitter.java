@@ -110,7 +110,7 @@ public class MessageSplitter {
     }
 
     private boolean hasCompleteMsg(int msgLen, String recvd) {
-        return recvd.length() >= recvd.length();
+        return recvd.length() >= msgLen;
     }
 
 }

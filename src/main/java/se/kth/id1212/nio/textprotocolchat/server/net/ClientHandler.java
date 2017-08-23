@@ -88,14 +88,9 @@ class ClientHandler implements Runnable {
      * @param msg The message to send.
      * @throws IOException If failed to send message.
      */
-    void sendMsg(String msg) throws IOException {
-        StringJoiner joiner = new StringJoiner(Constants.MSG_TYPE_DELIMETER);
-        joiner.add(MsgType.BROADCAST.toString());
-        joiner.add(msg);
-        String messageWithLengthHeader = MessageSplitter.prependLengthHeader(joiner.toString());
-        ByteBuffer msgToClient = ByteBuffer.wrap(messageWithLengthHeader.getBytes());
-        clientChannel.write(msgToClient);
-        if (msgToClient.hasRemaining()) {
+    void sendMsg(ByteBuffer msg) throws IOException {
+        clientChannel.write(msg);
+        if (msg.hasRemaining()) {
             throw new MessageException("Could not send message");
         }
     }
