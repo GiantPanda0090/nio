@@ -138,6 +138,7 @@ public class ChatServer {
         try {
             client.sendAll();
             key.interestOps(SelectionKey.OP_READ);
+        } catch (MessageException couldNotSendAllMessages) {
         } catch (IOException clientHasClosedConnection) {
             removeClient(key);
         }
@@ -179,6 +180,7 @@ public class ChatServer {
                     }
                     synchronized (client.messagesToSend) {
                         client.queueMsgToSend(msgToSend);
+
                     }
                 }
             }
@@ -202,15 +204,12 @@ public class ChatServer {
             }
         }
 
-        private void sendAll() throws IOException {
+        private void sendAll() throws IOException, MessageException {
             ByteBuffer msg = null;
             synchronized (messagesToSend) {
-                try {
-                    while ((msg = messagesToSend.peek()) != null) {
-                        handler.sendMsg(msg);
-                        messagesToSend.remove();
-                    }
-                } catch (MessageException couldNotSendAllMessages) {
+                while ((msg = messagesToSend.peek()) != null) {
+                    handler.sendMsg(msg);
+                    messagesToSend.remove();
                 }
             }
         }
